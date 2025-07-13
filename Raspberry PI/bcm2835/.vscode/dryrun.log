@@ -1,0 +1,8 @@
+make.exe --dry-run --always-make --keep-going --print-directory
+'\\192.168.10.34\pi\Stepper_Motor_HAT_B_Code\Raspberry PI\bcm2835'
+����Ϊ��ǰĿ¼������·�������� CMD.EXE��
+UNC ·������֧�֡�Ĭ��ֵ��Ϊ Windows Ŀ¼��
+
+'make.exe' �����ڲ����ⲿ���Ҳ���ǿ����еĳ���
+���������ļ���
+

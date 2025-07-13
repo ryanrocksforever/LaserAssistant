@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Laser Galvo Controller</title>
+    <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
+</head>
+<body>
+<div class="main-container">
+    <aside class="sidebar">
+        <h2>📍 Saved Locations</h2>
+        <select id="locationSelect" size="10">
+            {% for item in locations %}
+            <option>{{ item }}</option>
+            {% endfor %}
+        </select>
+        <button onclick="moveToLocation()">Point Laser</button>
+    </aside>
+
+    <main class="content">
+        <h1>🔦 Laser Galvo Controller</h1>
+
+        <section class="card">
+            <h2>➕ Add / Update Item</h2>
+            <input type="text" id="item" placeholder="Item Name">
+            <div class="coords">
+                <input type="number" id="x" placeholder="X Coordinate">
+                <input type="number" id="y" placeholder="Y Coordinate">
+            </div>
+            <button onclick="saveLocation()">Save Location</button>
+        </section>
+
+        <section class="card">
+            <h2>🎮 Manual Adjustment</h2>
+            <div class="control-pad">
+                <button class="arrow" onclick="manualMove('up')">▲</button>
+                <div class="middle-row">
+                    <button class="arrow" onclick="manualMove('left')">◀</button>
+                    <button class="arrow" onclick="manualMove('down')">▼</button>
+                    <button class="arrow" onclick="manualMove('right')">▶</button>
+                </div>
+            </div>
+        </section>
+    </main>
+</div>
+
+<script>
+    function saveLocation(){
+        fetch('/save_location', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({
+                item:document.getElementById('item').value,
+                x:parseInt(document.getElementById('x').value),
+                y:parseInt(document.getElementById('y').value)
+            })
+        }).then(res=>res.json()).then(()=>{
+            alert('Location Saved!');
+            location.reload();
+        });
+    }
+
+    function moveToLocation(){
+        let item=document.getElementById('locationSelect').value;
+        fetch('/get_location/'+item)
+            .then(res=>res.json())
+            .then(d=>alert(d.status=='success'?'Laser Moved!':'Error moving laser.'));
+    }
+
+    function manualMove(dir){
+        fetch('/move_manual',{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({direction:dir})
+        });
+    }
+</script>
+</body>
+</html>
