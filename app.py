@@ -124,13 +124,16 @@ def voice_command():
     )
 
     try:
-        response = openai.ChatCompletion.create(
+        response = openai.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=10,
             temperature=0.1
         )
-        location = response['choices'][0]['message']['content'].strip()
+        location = response.choices[0].message.content.strip()
+        print(f"> Prompt: {text}")
+        print(f"> LLM Response: {location}")
+
         if location in locations:
             galvo.move_to(locations[location]['x'], locations[location]['y'])
             return jsonify({'status': 'success', 'location': location})
@@ -138,6 +141,6 @@ def voice_command():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ─────── Run HTTPS Flask Server ───────
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, ssl_context=('cert.pem', 'key.pem'))
-
