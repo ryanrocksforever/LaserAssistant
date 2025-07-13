@@ -2,127 +2,238 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Laser Galvo Controller</title>
+    <title>Laser Assistant</title>
     <style>
         body {
             margin: 0;
-            font-family: Arial, sans-serif;
-            background-color: #121212;
-            color: #ffffff;
+            font-family: 'Segoe UI', sans-serif;
+            background-color: #1e1e2f;
+            color: #ddd;
             display: flex;
             height: 100vh;
         }
+
         .sidebar {
-            width: 25%;
-            background-color: #1e1e1e;
-            padding: 20px;
+            width: 250px;
+            background-color: #2d2d44;
+            padding: 1rem;
+            box-sizing: border-box;
             overflow-y: auto;
         }
-        .main {
-            flex-grow: 1;
-            padding: 20px;
+
+        .sidebar h2 {
+            font-size: 1.2rem;
+            margin-bottom: 1rem;
         }
-        h2 {
-            color: #81d4fa;
-        }
-        form {
-            margin-bottom: 20px;
-        }
-        input[type="text"], input[type="number"] {
-            padding: 10px;
-            margin-right: 10px;
+
+        .location-btn {
+            display: block;
+            width: 100%;
+            margin: 0.25rem 0;
+            padding: 0.5rem;
+            background-color: #444466;
+            border: none;
             border-radius: 5px;
-            border: none;
-            background-color: #2e2e2e;
-            color: white;
-        }
-        button {
-            padding: 10px 15px;
-            margin: 5px;
-            background-color: #2196f3;
-            color: white;
-            border: none;
-            border-radius: 4px;
+            color: #ddd;
             cursor: pointer;
         }
-        button:hover {
-            background-color: #1976d2;
+
+        .location-btn:hover {
+            background-color: #5a5a88;
         }
+
+        .main {
+            flex-grow: 1;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
         .controls {
-            display: grid;
-            grid-template-columns: 50px 50px 50px;
-            grid-gap: 10px;
-            justify-content: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
-        .position {
-            margin-top: 15px;
+
+        .control-grid {
+            display: grid;
+            grid-template-areas:
+        ". up ."
+        "left . right"
+        ". down .";
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .control-grid button {
+            padding: 1rem;
+            font-size: 1.2rem;
+            background-color: #4d4d6b;
+            border: none;
+            border-radius: 6px;
+            color: white;
+            cursor: pointer;
+            width: 80px;
+            height: 80px;
+        }
+
+        .control-grid button:hover {
+            background-color: #66668a;
+        }
+
+        .form {
+            margin-top: 1rem;
+        }
+
+        .form input, .form select {
+            padding: 0.4rem;
+            border-radius: 5px;
+            border: none;
+            margin-right: 0.5rem;
+        }
+
+        .form button {
+            padding: 0.4rem 1rem;
+            background-color: #3a3a55;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        #position {
+            font-size: 1.1rem;
+            margin-top: 1rem;
+            color: #9ecfff;
+        }
+
+        #voice-btn {
+            margin-top: 2rem;
+            padding: 0.6rem 1rem;
+            font-size: 1rem;
+            background-color: #3a3a55;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        #voice-transcript {
+            margin-top: 0.5rem;
+            color: #aaa;
         }
     </style>
 </head>
 <body>
 <div class="sidebar">
     <h2>Saved Locations</h2>
-    <form id="gotoForm" onsubmit="gotoLocation(event)">
-        <select id="locationSelect" name="location_name" required>
-            <option disabled selected>Select location</option>
-            {% for name in locations %}
-            <option value="{{ name }}">{{ name }}</option>
-            {% endfor %}
-        </select>
-        <button type="submit">Go</button>
-    </form>
-    <form action="/save_location" method="post">
-        <input type="text" name="location_name" placeholder="New location name" required>
-        <button type="submit">Save Location</button>
-    </form>
+    {% for loc in locations %}
+    <button class="location-btn" onclick="gotoLocation('{{ loc }}')">{{ loc }}</button>
+    {% endfor %}
 </div>
 
 <div class="main">
-    <h2>Manual Control</h2>
-    <label>Step Size: </label>
-    <input type="number" id="stepSize" value="10" min="1" max="100">
     <div class="controls">
-        <div></div>
-        <button onclick="move('up')">↑</button>
-        <div></div>
-        <button onclick="move('left')">←</button>
-        <div></div>
-        <button onclick="move('right')">→</button>
-        <div></div>
-        <button onclick="move('down')">↓</button>
-        <div></div>
-    </div>
-    <div class="position">
-        <strong>Current Position:</strong> <span id="position">X: ..., Y: ...</span>
+        <div class="control-grid">
+            <button onclick="move('up')" style="grid-area: up;">↑</button>
+            <button onclick="move('left')" style="grid-area: left;">←</button>
+            <button onclick="move('right')" style="grid-area: right;">→</button>
+            <button onclick="move('down')" style="grid-area: down;">↓</button>
+        </div>
+
+        <div class="form">
+            <label for="step">Step Size:</label>
+            <select id="step">
+                <option value="1">1</option>
+                <option value="5" selected>5</option>
+                <option value="10">10</option>
+                <option value="20">20</option>
+            </select>
+        </div>
+
+        <div class="form">
+            <input type="text" id="location-name" placeholder="New location name">
+            <button onclick="saveLocation()">Save</button>
+        </div>
+
+        <div id="position">Position: X: ?, Y: ?</div>
+
+        <button id="voice-btn">🎙️ Speak</button>
+        <div id="voice-transcript"></div>
     </div>
 </div>
 
 <script>
     function move(direction) {
-        const stepSize = parseInt(document.getElementById('stepSize').value);
+        const stepSize = document.getElementById('step').value;
         fetch('/move_manual', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ direction, step_size: stepSize })
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ direction: direction, step_size: parseInt(stepSize) })
         });
+    }
+
+    function saveLocation() {
+        const name = document.getElementById('location-name').value;
+        if (!name) return alert("Name required");
+        fetch('/save_location', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name: name })
+        }).then(() => location.reload());
+    }
+
+    function gotoLocation(name) {
+        fetch(`/goto/${encodeURIComponent(name)}`, { method: 'POST' });
     }
 
     function updatePosition() {
         fetch('/get_position')
             .then(res => res.json())
             .then(pos => {
-                document.getElementById('position').innerText = `X: ${pos.x}, Y: ${pos.y}`;
+                document.getElementById('position').innerText = `Position: X: ${pos.x}, Y: ${pos.y}`;
             });
     }
+    setInterval(updatePosition, 1000);
 
-    function gotoLocation(event) {
-        event.preventDefault();
-        const location = document.getElementById('locationSelect').value;
-        fetch(`/goto/${location}`, { method: 'POST' });
-    }
+    // Voice recognition
+    const voiceMap = {
+        "screwdriver": "screwdrivers drawer",
+        "tv": "TV",
+        "fridge": "fridge",
+        "tools": "tool cabinet"
+    };
 
-    setInterval(updatePosition, 500);
-    updatePosition();
+    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    document.getElementById("voice-btn").addEventListener("click", () => {
+        recognition.start();
+    });
+
+    recognition.onresult = function(event) {
+        const transcript = event.results[0][0].transcript.toLowerCase();
+        document.getElementById("voice-transcript").innerText = `🗣️ "${transcript}"`;
+
+        if (transcript.includes("where") || transcript.includes("point") || transcript.includes("show")) {
+            for (const key in voiceMap) {
+                if (transcript.includes(key)) {
+                    const location = voiceMap[key];
+                    fetch(`/goto/${encodeURIComponent(location)}`, { method: "POST" });
+                    return;
+                }
+            }
+        }
+
+        alert("❌ Didn't recognize a known location.");
+    };
+
+    recognition.onerror = function(e) {
+        alert("Speech error: " + e.error);
+    };
 </script>
 </body>
 </html>
