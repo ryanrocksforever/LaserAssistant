@@ -1,7 +1,15 @@
 from flask import Flask, request, jsonify, render_template
 import json
 import time
-from HR8825 import HR8825
+import atexit
+
+# Attempt to import motor driver
+try:
+    from HR8825 import HR8825
+    MOTOR_AVAILABLE = True
+except Exception as e:
+    print(f"⚠️ HR8825 library could not be imported: {e}")
+    MOTOR_AVAILABLE = False
 
 # ─── Flask App ─────────────────────────────────────────────
 app = Flask(__name__)
@@ -12,21 +20,28 @@ class GalvoController:
         self.MICROSTEP_MODE = '1/8step'
         self.REVERSED = {'x': True, 'y': True}
         self.M1_HOME_OFFSET = -150
-
-        # Setup motors
-        self.Motor1 = HR8825(dir_pin=13, step_pin=19, enable_pin=12, mode_pins=(16, 17, 20))
-        self.Motor2 = HR8825(dir_pin=24, step_pin=18, enable_pin=4, mode_pins=(21, 22, 27))
-
-        self.Motor1.SetMicroStep('softward', self.MICROSTEP_MODE)
-        self.Motor2.SetMicroStep('softward', self.MICROSTEP_MODE)
-
         self.current_position = {'x': 0, 'y': 0}
 
-        print("✨ GalvoController initialized.")
-        self.startup_sequence()
+        if not MOTOR_AVAILABLE:
+            print("🚫 Motor not available. Skipping motor init.")
+            self.Motor1 = None
+            self.Motor2 = None
+            return
+
+        try:
+            self.Motor1 = HR8825(dir_pin=13, step_pin=19, enable_pin=12, mode_pins=(16, 17, 20))
+            self.Motor2 = HR8825(dir_pin=24, step_pin=18, enable_pin=4, mode_pins=(21, 22, 27))
+            self.Motor1.SetMicroStep('softward', self.MICROSTEP_MODE)
+            self.Motor2.SetMicroStep('softward', self.MICROSTEP_MODE)
+            print("✨ GalvoController initialized.")
+            self.startup_sequence()
+        except Exception as e:
+            print(f"❌ Failed to initialize motors: {e}")
+            self.Motor1 = None
+            self.Motor2 = None
 
     def move_axis(self, motor, axis, steps, delay=0.001):
-        if steps == 0:
+        if not motor or steps == 0:
             return
         if self.REVERSED.get(axis, False):
             steps = -steps
@@ -59,6 +74,13 @@ class GalvoController:
         self.move_axis(self.Motor2, 'y', -100)
         print("✅ Startup sequence complete.")
 
+    def stop(self):
+        if self.Motor1:
+            self.Motor1.Stop()
+        if self.Motor2:
+            self.Motor2.Stop()
+        print("🛑 Motors stopped and cleaned up.")
+
 # ─── Location Storage ──────────────────────────────────────
 def load_locations():
     try:
@@ -71,10 +93,10 @@ def save_locations(data):
     with open('locations.json', 'w') as f:
         json.dump(data, f, indent=4)
 
-# ─── Create Shared Controller Instance ─────────────────────
-galvo = GalvoController()
+# ─── Shared Galvo Controller ───────────────────────────────
+galvo = None
 
-# ─── Routes ────────────────────────────────────────────────
+# ─── Flask Routes ──────────────────────────────────────────
 @app.route('/')
 def index():
     locations = load_locations()
@@ -84,33 +106,43 @@ def index():
 def save_location():
     data = request.json
     locations = load_locations()
-    item = data['item']
-    x = data['x']
-    y = data['y']
-    locations[item] = {'x': x, 'y': y}
+    locations[data['item']] = {'x': data['x'], 'y': data['y']}
     save_locations(locations)
-    print(f"💾 Saved location for '{item}' → X: {x}, Y: {y}")
     return jsonify({'status': 'success'})
 
 @app.route('/get_location/<item>')
 def get_location(item):
+    if not galvo:
+        return jsonify({'status': 'error', 'message': 'Motors not initialized'})
     locations = load_locations()
     if item in locations:
         coords = locations[item]
         galvo.move_to(coords['x'], coords['y'])
-        print(f"🎯 Pointing to '{item}' at X: {coords['x']}, Y: {coords['y']}")
         return jsonify({'status': 'success'})
-    else:
-        return jsonify({'status': 'error', 'message': 'Item not found'})
+    return jsonify({'status': 'error', 'message': 'Item not found'})
 
 @app.route('/move_manual', methods=['POST'])
 def move_manual():
+    if not galvo:
+        return jsonify({'status': 'error', 'message': 'Motors not initialized'})
     data = request.json
-    direction = data['direction']
-    galvo.move_manual(direction)
+    galvo.move_manual(data['direction'])
     return jsonify({'status': 'success', 'position': galvo.current_position})
 
-# ─── Run Server ─────────────────────────────────────────────
+# ─── Cleanup on Exit ───────────────────────────────────────
+@atexit.register
+def shutdown():
+    if galvo:
+        galvo.stop()
+
+# ─── Safe Entry Point ──────────────────────────────────────
 if __name__ == '__main__':
+    import os
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        # This is the actual Flask run (not the reloader)
+        galvo = GalvoController()
+    else:
+        print("🚫 Skipping motor init due to Flask reloader phase.")
+
     print("🚀 Starting Flask server...")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, use_reloader=True, host='0.0.0.0', port=5000)
