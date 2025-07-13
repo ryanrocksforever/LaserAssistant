@@ -6,13 +6,13 @@ import json
 import os
 import atexit
 
-# Load environment variables
+# Load env vars
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 app = Flask(__name__)
 
-# ─────── Galvo Controller ───────
+# ─── Galvo Setup ───
 class GalvoController:
     def __init__(self):
         self.MIN_X, self.MAX_X = 0, 75
@@ -23,7 +23,6 @@ class GalvoController:
         self.Motor2 = HR8825(24, 18, 4, (21, 22, 27))
         self.Motor1.SetMicroStep('softward', '1/8step')
         self.Motor2.SetMicroStep('softward', '1/8step')
-
         self.home()
 
     def home(self):
@@ -53,7 +52,7 @@ class GalvoController:
 galvo = GalvoController()
 atexit.register(galvo.shutdown)
 
-# ─────── Location Storage ───────
+# ─── Location Save/Load ───
 LOCATION_FILE = 'locations.json'
 
 def load_locations():
@@ -69,7 +68,7 @@ def save_locations(locs):
     with open(LOCATION_FILE, 'w') as f:
         json.dump(locs, f, indent=2)
 
-# ─────── Routes ───────
+# ─── Routes ───
 @app.route('/')
 def index():
     return render_template('index.html', locations=load_locations().keys())
@@ -112,16 +111,21 @@ def goto_location(loc):
 @app.route('/voice_command', methods=['POST'])
 def voice_command():
     text = request.get_json().get('text', '').strip().lower()
+    print(f"[VOICE COMMAND RECEIVED]: {text}")
+
     if not text:
-        return 'Missing input', 400
+        return jsonify({'status': 'error', 'message': 'No input received'}), 400
 
     locations = load_locations()
     location_names = ', '.join(locations.keys())
+
     prompt = (
         f"These are the known locations: {location_names}.\n"
         f"Given the voice command: \"{text}\", which location should the laser point to?\n"
         f"Respond with exactly one of the names, or say \"none\" if nothing matches."
     )
+
+    print(f"[LLM PROMPT]: {prompt}")
 
     try:
         response = openai.chat.completions.create(
@@ -130,17 +134,18 @@ def voice_command():
             max_tokens=10,
             temperature=0.1
         )
-        location = response.choices[0].message.content.strip()
-        print(f"> Prompt: {text}")
-        print(f"> LLM Response: {location}")
+        message = response.choices[0].message.content.strip()
+        print(f"[LLM RESPONSE]: {message}")
 
-        if location in locations:
-            galvo.move_to(locations[location]['x'], locations[location]['y'])
-            return jsonify({'status': 'success', 'location': location})
-        return jsonify({'status': 'not found', 'message': location})
+        if message in locations:
+            galvo.move_to(locations[message]['x'], locations[message]['y'])
+            return jsonify({'status': 'success', 'location': message})
+
+        return jsonify({'status': 'not found', 'message': message})
+
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"[ERROR]: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
-# ─────── Run HTTPS Flask Server ───────
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, ssl_context=('cert.pem', 'key.pem'))

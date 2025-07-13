@@ -83,13 +83,21 @@
         rec.lang = 'en-US';
         rec.onresult = async (e) => {
             const text = e.results[0][0].transcript;
-            const res = await fetch('/voice_command', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({text})
-            });
-            const result = await res.json();
-            alert(`Response: ${result.location || result.message}`);
+            console.log("[Voice Input]:", text);
+
+            try {
+                const res = await fetch('/voice_command', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ text })
+                });
+                const result = await res.json();
+                console.log("[LLM Response]:", result);
+                alert(result.status === 'success' ? `Laser pointing to: ${result.location}` : `Result: ${result.message}`);
+            } catch (err) {
+                console.error("Server error:", err);
+                alert("Error processing voice command");
+            }
         };
         rec.start();
     }
