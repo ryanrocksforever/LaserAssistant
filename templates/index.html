@@ -3,77 +3,134 @@
 <head>
     <meta charset="UTF-8">
     <title>Laser Galvo Controller</title>
-    <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
+    <style>
+        body {
+            background-color: #111;
+            color: #f4f4f4;
+            font-family: sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 700px;
+            margin: auto;
+            background-color: #222;
+            padding: 20px;
+            border-radius: 10px;
+        }
+        h1, h2 {
+            color: #00d1ff;
+        }
+        input, select, button {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 6px;
+            border: none;
+            font-size: 16px;
+            background: #333;
+            color: white;
+            width: 100%;
+        }
+        button {
+            background-color: #00d1ff;
+            color: #000;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #00aacc;
+        }
+        .control-pad {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .middle-row {
+            display: flex;
+            gap: 10px;
+        }
+        .arrow {
+            font-size: 20px;
+            width: 60px;
+            height: 60px;
+            background-color: #444;
+            color: white;
+        }
+        .arrow:hover {
+            background-color: #00d1ff;
+            color: black;
+        }
+    </style>
 </head>
 <body>
-<div class="main-container">
-    <aside class="sidebar">
-        <h2>📍 Saved Locations</h2>
-        <select id="locationSelect" size="10">
-            {% for item in locations %}
-            <option>{{ item }}</option>
-            {% endfor %}
-        </select>
-        <button onclick="moveToLocation()">Point Laser</button>
-    </aside>
+<div class="container">
+    <h1>Laser Galvo Controller</h1>
 
-    <main class="content">
-        <h1>🔦 Laser Galvo Controller</h1>
+    <h2>Save Current Location</h2>
+    <input type="text" id="item" placeholder="Item Name">
+    <p>📍 X: <span id="xPos">0</span> | Y: <span id="yPos">0</span></p>
+    <button onclick="saveLocation()">Save Location</button>
 
-        <section class="card">
-            <h2>➕ Add / Update Item</h2>
-            <input type="text" id="item" placeholder="Item Name">
-            <div class="coords">
-                <input type="number" id="x" placeholder="X Coordinate">
-                <input type="number" id="y" placeholder="Y Coordinate">
-            </div>
-            <button onclick="saveLocation()">Save Location</button>
-        </section>
+    <h2>Point to Saved Location</h2>
+    <select id="locationSelect">
+        {% for item in locations %}
+        <option>{{ item }}</option>
+        {% endfor %}
+    </select>
+    <button onclick="moveToLocation()">Point Laser</button>
 
-        <section class="card">
-            <h2>🎮 Manual Adjustment</h2>
-            <div class="control-pad">
-                <button class="arrow" onclick="manualMove('up')">▲</button>
-                <div class="middle-row">
-                    <button class="arrow" onclick="manualMove('left')">◀</button>
-                    <button class="arrow" onclick="manualMove('down')">▼</button>
-                    <button class="arrow" onclick="manualMove('right')">▶</button>
-                </div>
-            </div>
-        </section>
-    </main>
+    <h2>Manual Control</h2>
+    Step Size: <input type="number" id="stepSize" value="10" min="1">
+    <div class="control-pad">
+        <button class="arrow" onclick="manualMove('up')">▲</button>
+        <div class="middle-row">
+            <button class="arrow" onclick="manualMove('left')">◀</button>
+            <button class="arrow" onclick="manualMove('down')">▼</button>
+            <button class="arrow" onclick="manualMove('right')">▶</button>
+        </div>
+    </div>
 </div>
 
 <script>
-    function saveLocation(){
+    function getPosition() {
+        fetch('/get_position')
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('xPos').textContent = data.x;
+                document.getElementById('yPos').textContent = data.y;
+            });
+    }
+
+    function saveLocation() {
+        const item = document.getElementById('item').value;
         fetch('/save_location', {
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({
-                item:document.getElementById('item').value,
-                x:parseInt(document.getElementById('x').value),
-                y:parseInt(document.getElementById('y').value)
-            })
-        }).then(res=>res.json()).then(()=>{
-            alert('Location Saved!');
-            location.reload();
-        });
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item })
+        })
+            .then(res => res.json())
+            .then(data => {
+                alert(`Saved '${item}' at X=${data.x}, Y=${data.y}`);
+                location.reload();
+            });
     }
 
-    function moveToLocation(){
-        let item=document.getElementById('locationSelect').value;
-        fetch('/get_location/'+item)
-            .then(res=>res.json())
-            .then(d=>alert(d.status=='success'?'Laser Moved!':'Error moving laser.'));
+    function moveToLocation() {
+        const item = document.getElementById('locationSelect').value;
+        fetch('/get_location/' + item)
+            .then(() => getPosition());
     }
 
-    function manualMove(dir){
-        fetch('/move_manual',{
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({direction:dir})
-        });
+    function manualMove(direction) {
+        const step = parseInt(document.getElementById('stepSize').value) || 10;
+        fetch('/move_manual', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ direction: direction, step_size: step })
+        }).then(() => getPosition());
     }
+
+    setInterval(getPosition, 1000);
+    window.onload = getPosition;
 </script>
 </body>
 </html>

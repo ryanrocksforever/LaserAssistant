@@ -4,7 +4,6 @@ import time
 import atexit
 import os
 
-# Try to import motor driver
 try:
     from HR8825 import HR8825
     MOTOR_AVAILABLE = True
@@ -13,8 +12,8 @@ except Exception as e:
     MOTOR_AVAILABLE = False
 
 app = Flask(__name__)
+LOCATION_FILE = "locations.json"
 
-# ─── Galvo Motor Controller ───────────────────────────────
 class GalvoController:
     def __init__(self):
         self.MICROSTEP_MODE = '1/8step'
@@ -78,9 +77,6 @@ class GalvoController:
         if self.Motor2: self.Motor2.Stop()
         print("🛑 Motors stopped.")
 
-# ─── Location Storage ─────────────────────────────────────
-LOCATION_FILE = "locations.json"
-
 def load_locations():
     try:
         with open(LOCATION_FILE, 'r') as f:
@@ -96,10 +92,8 @@ def save_locations(data):
     with open(LOCATION_FILE, 'w') as f:
         json.dump(data, f, indent=4)
 
-# ─── Global Motor Instance (only in final run phase) ──────
 galvo = None
 
-# ─── Flask Routes ─────────────────────────────────────────
 @app.route('/')
 def index():
     locations = load_locations()
@@ -109,9 +103,14 @@ def index():
 def save_location():
     data = request.json
     locations = load_locations()
-    locations[data['item']] = {'x': data['x'], 'y': data['y']}
+    if not galvo:
+        return jsonify({'status': 'error', 'message': 'Galvo not initialized'})
+
+    x = galvo.current_position['x']
+    y = galvo.current_position['y']
+    locations[data['item']] = {'x': x, 'y': y}
     save_locations(locations)
-    return jsonify({'status': 'success'})
+    return jsonify({'status': 'success', 'x': x, 'y': y})
 
 @app.route('/get_location/<item>')
 def get_location(item):
@@ -129,16 +128,21 @@ def move_manual():
     if not galvo:
         return jsonify({'status': 'error', 'message': 'Motors not initialized'})
     data = request.json
-    galvo.move_manual(data['direction'])
+    step = data.get('step_size', 10)
+    galvo.move_manual(data['direction'], step_size=step)
     return jsonify({'status': 'success', 'position': galvo.current_position})
 
-# ─── Shutdown Cleanup ─────────────────────────────────────
+@app.route('/get_position')
+def get_position():
+    if galvo:
+        return jsonify(galvo.current_position)
+    return jsonify({'x': 0, 'y': 0})
+
 @atexit.register
 def shutdown():
     if galvo:
         galvo.stop()
 
-# ─── Safe Motor Init (avoid double init from Flask reload) ─
 if __name__ == '__main__':
     if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
         galvo = GalvoController()
