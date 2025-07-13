@@ -5,132 +5,121 @@
     <title>Laser Galvo Controller</title>
     <style>
         body {
-            background-color: #111;
-            color: #f4f4f4;
-            font-family: sans-serif;
             margin: 0;
+            font-family: 'Segoe UI', sans-serif;
+            background-color: #121212;
+            color: #e0e0e0;
+            display: flex;
+            height: 100vh;
+        }
+        .sidebar {
+            width: 25%;
+            background-color: #1e1e1e;
+            padding: 20px;
+            border-right: 1px solid #333;
+            overflow-y: auto;
+        }
+        .main {
+            width: 75%;
             padding: 20px;
         }
-        .container {
-            max-width: 700px;
-            margin: auto;
-            background-color: #222;
-            padding: 20px;
-            border-radius: 10px;
+        h2 {
+            color: #81d4fa;
         }
-        h1, h2 {
-            color: #00d1ff;
-        }
-        input, select, button {
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 6px;
-            border: none;
-            font-size: 16px;
-            background: #333;
-            color: white;
-            width: 100%;
+        form, .controls, .position {
+            margin-bottom: 20px;
         }
         button {
-            background-color: #00d1ff;
-            color: #000;
+            padding: 10px;
+            margin: 5px;
+            font-size: 16px;
+            background-color: #2196f3;
+            color: white;
+            border: none;
+            border-radius: 4px;
             cursor: pointer;
         }
         button:hover {
-            background-color: #00aacc;
+            background-color: #1976d2;
         }
-        .control-pad {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-        .middle-row {
-            display: flex;
-            gap: 10px;
-        }
-        .arrow {
-            font-size: 20px;
-            width: 60px;
-            height: 60px;
-            background-color: #444;
+        input[type="text"], input[type="number"] {
+            padding: 8px;
+            margin-right: 10px;
+            background-color: #2c2c2c;
             color: white;
+            border: 1px solid #444;
+            border-radius: 4px;
         }
-        .arrow:hover {
-            background-color: #00d1ff;
-            color: black;
+        .grid-controls {
+            display: grid;
+            grid-template-columns: auto auto auto;
+            gap: 10px;
+            width: 150px;
+            margin: auto;
+        }
+        .position {
+            font-size: 18px;
+            font-weight: bold;
+        }
+        select {
+            padding: 8px;
+            background-color: #2c2c2c;
+            color: white;
+            border: 1px solid #444;
+            border-radius: 4px;
         }
     </style>
 </head>
 <body>
-<div class="container">
-    <h1>Laser Galvo Controller</h1>
-
-    <h2>Save Current Location</h2>
-    <input type="text" id="item" placeholder="Item Name">
-    <p>📍 X: <span id="xPos">0</span> | Y: <span id="yPos">0</span></p>
-    <button onclick="saveLocation()">Save Location</button>
-
-    <h2>Point to Saved Location</h2>
-    <select id="locationSelect">
-        {% for item in locations %}
-        <option>{{ item }}</option>
-        {% endfor %}
-    </select>
-    <button onclick="moveToLocation()">Point Laser</button>
-
+<div class="sidebar">
+    <h2>Saved Locations</h2>
+    <form action="/goto/TV" method="post">
+        <select id="locationSelect" onchange="gotoLocation(this.value)">
+            <option disabled selected>Choose a location</option>
+            {% for name in locations %}
+            <option value="{{ name }}">{{ name }}</option>
+            {% endfor %}
+        </select>
+    </form>
+    <form action="/save_location" method="post">
+        <input type="text" name="location_name" placeholder="New location name" required>
+        <button type="submit">Save Current Position</button>
+    </form>
+</div>
+<div class="main">
     <h2>Manual Control</h2>
-    Step Size: <input type="number" id="stepSize" value="10" min="1">
-    <div class="control-pad">
-        <button class="arrow" onclick="manualMove('up')">▲</button>
-        <div class="middle-row">
-            <button class="arrow" onclick="manualMove('left')">◀</button>
-            <button class="arrow" onclick="manualMove('down')">▼</button>
-            <button class="arrow" onclick="manualMove('right')">▶</button>
+    <form action="/move" method="post">
+        <input type="number" name="step_size" id="step_size" value="10" min="1" max="100">
+        <div class="grid-controls">
+            <button name="direction" value="up">↑</button>
+            <button onclick="updatePosition()" type="button">↻</button>
+            <button name="direction" value="left">←</button>
+            <button name="direction" value="down">↓</button>
+            <button name="direction" value="right">→</button>
         </div>
+    </form>
+    <div class="position" id="position">
+        X: {{ current.x }}, Y: {{ current.y }}
     </div>
 </div>
-
 <script>
-    function getPosition() {
-        fetch('/get_position')
-            .then(res => res.json())
-            .then(data => {
-                document.getElementById('xPos').textContent = data.x;
-                document.getElementById('yPos').textContent = data.y;
-            });
+    async function updatePosition() {
+        const res = await fetch('/get_position');
+        const pos = await res.json();
+        document.getElementById("position").textContent = `X: ${pos.x}, Y: ${pos.y}`;
     }
-
-    function saveLocation() {
-        const item = document.getElementById('item').value;
-        fetch('/save_location', {
+    async function move(dir) {
+        const step = parseInt(document.getElementById("step_size").value) || 10;
+        await fetch('/move_manual', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ item })
-        })
-            .then(res => res.json())
-            .then(data => {
-                alert(`Saved '${item}' at X=${data.x}, Y=${data.y}`);
-                location.reload();
-            });
+            body: JSON.stringify({ direction: dir, step_size: step })
+        });
+        updatePosition();
     }
-
-    function moveToLocation() {
-        const item = document.getElementById('locationSelect').value;
-        fetch('/get_location/' + item)
-            .then(() => getPosition());
+    function gotoLocation(name) {
+        fetch(`/goto/${name}`, { method: 'POST' }).then(() => updatePosition());
     }
-
-    function manualMove(direction) {
-        const step = parseInt(document.getElementById('stepSize').value) || 10;
-        fetch('/move_manual', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ direction: direction, step_size: step })
-        }).then(() => getPosition());
-    }
-
-    setInterval(getPosition, 1000);
-    window.onload = getPosition;
 </script>
 </body>
 </html>

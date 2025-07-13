@@ -1,15 +1,15 @@
 from flask import Flask, render_template, request, redirect, jsonify
-import os
 import json
+import os
 import atexit
 
-# Try to import motor library (skip if testing without hardware)
+# Optional hardware support
 try:
     from HR8825 import HR8825
     MOTOR_AVAILABLE = True
 except ImportError:
     MOTOR_AVAILABLE = False
-    print("⚠️ Motor library not available — running in simulation mode.")
+    print("⚠️ Hardware not available — simulation mode enabled.")
 
 app = Flask(__name__)
 
@@ -20,17 +20,19 @@ class GalvoController:
         self.Y_MIN = 0
         self.Y_MAX = 200
         self.REVERSED = {'x': True, 'y': True}
-        self.MICROSTEP_MODE = '1/8step'
         self.current_position = {'x': 0, 'y': 0}
 
         if MOTOR_AVAILABLE:
             self.Motor1 = HR8825(dir_pin=13, step_pin=19, enable_pin=12, mode_pins=(16, 17, 20))
             self.Motor2 = HR8825(dir_pin=24, step_pin=18, enable_pin=4, mode_pins=(21, 22, 27))
-            self.Motor1.SetMicroStep('softward', self.MICROSTEP_MODE)
-            self.Motor2.SetMicroStep('softward', self.MICROSTEP_MODE)
+            self.Motor1.SetMicroStep('softward', '1/8step')
+            self.Motor2.SetMicroStep('softward', '1/8step')
+
+            # Move to known bottom Y limit
             self.move_to(self.current_position['x'], self.Y_MIN)
             self.current_position['y'] = self.Y_MIN
-            self.startup_sequence()
+
+            self.startup_test()
         else:
             self.Motor1 = self.Motor2 = None
 
@@ -67,22 +69,22 @@ class GalvoController:
             x += step_size
         self.move_to(x, y)
 
-    def startup_sequence(self):
-        print("⚙️ Running startup movement test...")
-        self.move_manual('right', 20)
-        self.move_manual('left', 20)
-        self.move_manual('up', 20)
-        self.move_manual('down', 20)
-        print("✅ Startup test complete.")
+    def startup_test(self):
+        print("🔁 Running startup motor test...")
+        self.move_manual('right', 10)
+        self.move_manual('left', 10)
+        self.move_manual('up', 10)
+        self.move_manual('down', 10)
+        print("✅ Startup complete.")
 
     def stop(self):
-        print("🛑 Returning to home before shutdown...")
+        print("🛑 Stopping: moving to bottom Y...")
         self.move_to(self.current_position['x'], self.Y_MIN)
         if self.Motor1:
             self.Motor1.Stop()
         if self.Motor2:
             self.Motor2.Stop()
-        print("🛑 Motors stopped at bottom of range.")
+        print("✅ Motors stopped cleanly.")
 
 galvo = GalvoController()
 atexit.register(galvo.stop)
@@ -92,10 +94,8 @@ LOCATIONS_FILE = 'locations.json'
 def load_locations():
     try:
         with open(LOCATIONS_FILE, 'r') as f:
-            content = f.read().strip()
-            if not content:
-                return {}
-            return json.loads(content)
+            text = f.read().strip()
+            return json.loads(text) if text else {}
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
@@ -103,12 +103,14 @@ def save_locations(locations):
     with open(LOCATIONS_FILE, 'w') as f:
         json.dump(locations, f, indent=2)
 
-@app.route('/', methods=['GET', 'POST'])
+# ────── ROUTES ─────────────────────────────
+
+@app.route('/')
 def index():
-    locations = load_locations()
     return render_template('index.html',
-                           locations=locations,
-                           current=galvo.current_position)
+                           locations=load_locations(),
+                           current=galvo.current_position
+                           )
 
 @app.route('/move', methods=['POST'])
 def move():
@@ -116,6 +118,18 @@ def move():
     step_size = int(request.form.get('step_size', 10))
     galvo.move_manual(direction, step_size)
     return redirect('/')
+
+@app.route('/move_manual', methods=['POST'])
+def move_manual_api():
+    data = request.get_json()
+    direction = data.get('direction')
+    step = int(data.get('step_size', 10))
+    galvo.move_manual(direction, step)
+    return jsonify(galvo.current_position)
+
+@app.route('/get_position')
+def get_position():
+    return jsonify(galvo.current_position)
 
 @app.route('/goto/<name>', methods=['POST'])
 def goto(name):
@@ -130,11 +144,14 @@ def save_location():
     name = request.form.get('location_name')
     if name:
         locations = load_locations()
-        x = galvo.current_position['x']
-        y = galvo.current_position['y']
-        locations[name] = [x, y]
+        locations[name] = [
+            galvo.current_position['x'],
+            galvo.current_position['y']
+        ]
         save_locations(locations)
     return redirect('/')
+
+# ───────────────────────────────────────────
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
