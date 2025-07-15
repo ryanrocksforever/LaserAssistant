@@ -4,12 +4,47 @@
     <title>Laser Assistant</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { background: #111; color: #eee; font-family: sans-serif; text-align: center; }
-        .controls, .locations { display: inline-block; vertical-align: top; margin: 20px; }
-        .arrow-btn { width: 60px; height: 60px; margin: 5px; font-size: 24px; }
-        #position { margin-top: 10px; font-size: 18px; }
-        select, input { padding: 10px; margin-top: 10px; }
-        button { padding: 10px 15px; margin-top: 10px; background: #0af; border: none; color: white; }
+        body {
+            background: #111;
+            color: #eee;
+            font-family: sans-serif;
+            text-align: center;
+        }
+        .controls, .locations {
+            display: inline-block;
+            vertical-align: top;
+            margin: 20px;
+        }
+        .arrow-btn {
+            width: 60px;
+            height: 60px;
+            margin: 5px;
+            font-size: 24px;
+        }
+        #position {
+            margin-top: 10px;
+            font-size: 18px;
+        }
+        select, input {
+            padding: 10px;
+            margin-top: 10px;
+        }
+        button {
+            padding: 10px 15px;
+            margin-top: 10px;
+            background: #0af;
+            border: none;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #08c;
+        }
+        #home-feedback {
+            margin-top: 5px;
+            font-size: 14px;
+            color: #0af;
+        }
     </style>
 </head>
 <body>
@@ -40,6 +75,10 @@
     <button class="arrow-btn" onclick="move('right')">➡️</button><br>
     <button class="arrow-btn" onclick="move('down')">⬇️</button><br>
     <div id="position">X: 0 Y: 0</div>
+
+    <h3>🏠 Reset Home Position</h3>
+    <button onclick="resetHome()">Reset</button>
+    <div id="home-feedback"></div>
 </div>
 
 <script>
@@ -48,7 +87,7 @@
         await fetch('/move_manual', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({direction: dir, step_size: step})
+            body: JSON.stringify({ direction: dir, step_size: step })
         });
         updatePosition();
     }
@@ -59,14 +98,14 @@
         await fetch('/save_location', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({name})
+            body: JSON.stringify({ name })
         });
         location.reload();
     }
 
     async function gotoLocation() {
         const name = document.getElementById('goto').value;
-        await fetch('/goto/' + name, {method: 'POST'});
+        await fetch('/goto/' + name, { method: 'POST' });
         updatePosition();
     }
 
@@ -76,7 +115,16 @@
         document.getElementById('position').innerText = `X: ${pos.x} Y: ${pos.y}`;
     }
 
-    setInterval(updatePosition, 1000);
+    async function resetHome() {
+        try {
+            const res = await fetch('/reset_home', { method: 'POST' });
+            const data = await res.json();
+            document.getElementById('home-feedback').innerText =
+                `New home set at X: ${data.new_home.x}, Y: ${data.new_home.y}`;
+        } catch (e) {
+            document.getElementById('home-feedback').innerText = "Failed to reset home.";
+        }
+    }
 
     function startListening() {
         const rec = new webkitSpeechRecognition();
@@ -84,7 +132,6 @@
         rec.onresult = async (e) => {
             const text = e.results[0][0].transcript;
             console.log("[Voice Input]:", text);
-
             try {
                 const res = await fetch('/voice_command', {
                     method: 'POST',
@@ -93,7 +140,9 @@
                 });
                 const result = await res.json();
                 console.log("[LLM Response]:", result);
-                alert(result.status === 'success' ? `Laser pointing to: ${result.location}` : `Result: ${result.message}`);
+                alert(result.status === 'success'
+                    ? `Laser pointing to: ${result.location}`
+                    : `Result: ${result.message}`);
             } catch (err) {
                 console.error("Server error:", err);
                 alert("Error processing voice command");
@@ -101,6 +150,9 @@
         };
         rec.start();
     }
+
+    // Auto-refresh current X/Y
+    setInterval(updatePosition, 1000);
 </script>
 </body>
 </html>

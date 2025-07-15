@@ -5,6 +5,8 @@ import openai
 import json
 import os
 import atexit
+import threading
+import time
 
 # Load env vars
 load_dotenv()
@@ -12,12 +14,25 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 
 app = Flask(__name__)
 
+# ─── Inactivity Timer ───
+STEPPER_TIMEOUT = 60  # seconds
+last_activity_time = time.time()
+
+def inactivity_monitor():
+    while True:
+        time.sleep(5)
+        if time.time() - last_activity_time > STEPPER_TIMEOUT:
+            galvo.disable_motors()
+
+threading.Thread(target=inactivity_monitor, daemon=True).start()
+
 # ─── Galvo Setup ───
 class GalvoController:
     def __init__(self):
         self.MIN_X, self.MAX_X = 0, 75
         self.MIN_Y, self.MAX_Y = 0, 200
         self.current_position = {'x': 0, 'y': 0}
+        self.home_position = {'x': 0, 'y': 0}
 
         self.Motor1 = HR8825(13, 19, 12, (16, 17, 20))
         self.Motor2 = HR8825(24, 18, 4, (21, 22, 27))
@@ -25,15 +40,24 @@ class GalvoController:
         self.Motor2.SetMicroStep('softward', '1/8step')
         self.home()
 
+    def _update_activity(self):
+        global last_activity_time
+        last_activity_time = time.time()
+
     def home(self):
-        self.move_to(0, 0)
+        self.move_to(self.home_position['x'], self.home_position['y'])
+
+    def reset_home(self):
+        self.home_position = self.current_position.copy()
 
     def move_to(self, x, y, delay=0.001):
+        self._update_activity()
         dx = max(self.MIN_X, min(self.MAX_X, x)) - self.current_position['x']
         dy = max(self.MIN_Y, min(self.MAX_Y, y)) - self.current_position['y']
         self.move_relative(dx, dy, delay)
 
     def move_relative(self, dx, dy, delay=0.001):
+        self._update_activity()
         x_target = max(self.MIN_X, min(self.MAX_X, self.current_position['x'] + dx))
         y_target = max(self.MIN_Y, min(self.MAX_Y, self.current_position['y'] + dy))
 
@@ -44,10 +68,14 @@ class GalvoController:
 
         self.current_position = {'x': x_target, 'y': y_target}
 
-    def shutdown(self):
-        self.move_to(0, 0)
+    def disable_motors(self):
         self.Motor1.Stop()
         self.Motor2.Stop()
+        print("[INFO] Motors powered off due to inactivity.")
+
+    def shutdown(self):
+        self.disable_motors()
+        self.home()
 
 galvo = GalvoController()
 atexit.register(galvo.shutdown)
@@ -125,8 +153,6 @@ def voice_command():
         f"Respond with exactly one of the names, or say \"none\" if nothing matches."
     )
 
-    print(f"[LLM PROMPT]: {prompt}")
-
     try:
         response = openai.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -146,6 +172,11 @@ def voice_command():
     except Exception as e:
         print(f"[ERROR]: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/reset_home', methods=['POST'])
+def reset_home():
+    galvo.reset_home()
+    return jsonify({'status': 'success', 'new_home': galvo.home_position})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, ssl_context=('cert.pem', 'key.pem'))

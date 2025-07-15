@@ -1,0 +1,3 @@
+sudo nmcli connection add type wifi ifname wlan0 con-name "MyOtherNetwork" ssid "Forge Makerspace"
+sudo nmcli connection modify "MyOtherNetwork" wifi-sec.key-mgmt wpa-psk
+sudo nmcli connection modify "MyOtherNetwork" wifi-sec.psk "FM234100"
