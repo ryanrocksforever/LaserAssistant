@@ -15,7 +15,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 app = Flask(__name__)
 
 # ─── Inactivity Timer ───
-STEPPER_TIMEOUT = 60  # seconds
+STEPPER_TIMEOUT = 60
 last_activity_time = time.time()
 
 def inactivity_monitor():
@@ -72,12 +72,15 @@ class GalvoController:
         self.Motor2.Stop()
         print("[INFO] Motors powered off due to inactivity.")
 
-    def draw_square(self, size=10, delay=0.01):
+    def draw_square(self, size=5, delay=0.01, duration=5):
+        print(f"[INFO] Drawing square of size {size} for {duration}s")
         original = self.current_position.copy()
-        self.move_relative(size, 0, delay)
-        self.move_relative(0, size, delay)
-        self.move_relative(-size, 0, delay)
-        self.move_relative(0, -size, delay)
+        end_time = time.time() + duration
+        while time.time() < end_time:
+            self.move_relative(size, 0, delay)
+            self.move_relative(0, size, delay)
+            self.move_relative(-size, 0, delay)
+            self.move_relative(0, -size, delay)
         self.move_to(original['x'], original['y'])
 
     def shutdown(self):
