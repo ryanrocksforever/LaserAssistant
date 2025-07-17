@@ -24,8 +24,6 @@ def inactivity_monitor():
         if time.time() - last_activity_time > STEPPER_TIMEOUT:
             galvo.disable_motors()
 
-threading.Thread(target=inactivity_monitor, daemon=True).start()
-
 # ─── Galvo Setup ───
 class GalvoController:
     def __init__(self):
@@ -33,7 +31,7 @@ class GalvoController:
         self.MIN_Y, self.MAX_Y = 0, 200
         self.current_position = {'x': 0, 'y': 0}
         self.home_position = {'x': 0, 'y': 0}
-        self.last_location_name = "None"
+        self.last_location_name = None
 
         self.Motor1 = HR8825(13, 19, 12, (16, 17, 20))
         self.Motor2 = HR8825(24, 18, 4, (21, 22, 27))
@@ -74,11 +72,20 @@ class GalvoController:
         self.Motor2.Stop()
         print("[INFO] Motors powered off due to inactivity.")
 
+    def draw_square(self, size=10, delay=0.01):
+        original = self.current_position.copy()
+        self.move_relative(size, 0, delay)
+        self.move_relative(0, size, delay)
+        self.move_relative(-size, 0, delay)
+        self.move_relative(0, -size, delay)
+        self.move_to(original['x'], original['y'])
+
     def shutdown(self):
         self.disable_motors()
         self.home()
 
 galvo = GalvoController()
+threading.Thread(target=inactivity_monitor, daemon=True).start()
 atexit.register(galvo.shutdown)
 
 # ─── Location Save/Load ───
@@ -100,7 +107,7 @@ def save_locations(locs):
 # ─── Routes ───
 @app.route('/')
 def index():
-    return render_template('index.html', locations=load_locations().keys(), current=galvo.last_location_name)
+    return render_template('index.html', locations=load_locations().keys(), current_target=galvo.last_location_name)
 
 @app.route('/get_position')
 def get_position():
@@ -135,6 +142,7 @@ def goto_location(loc):
     if pos:
         galvo.last_location_name = loc
         galvo.move_to(pos['x'], pos['y'])
+        galvo.draw_square()
         return '', 204
     return 'Location not found', 404
 
@@ -168,6 +176,7 @@ def voice_command():
         if message in locations:
             galvo.last_location_name = message
             galvo.move_to(locations[message]['x'], locations[message]['y'])
+            galvo.draw_square()
             return jsonify({'status': 'success', 'location': message})
 
         return jsonify({'status': 'not found', 'message': message})
