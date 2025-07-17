@@ -4,47 +4,11 @@
     <title>Laser Assistant</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body {
-            background: #111;
-            color: #eee;
-            font-family: sans-serif;
-            text-align: center;
-        }
-        .controls, .locations {
-            display: inline-block;
-            vertical-align: top;
-            margin: 20px;
-        }
-        .arrow-btn {
-            width: 60px;
-            height: 60px;
-            margin: 5px;
-            font-size: 24px;
-        }
-        #position {
-            margin-top: 10px;
-            font-size: 18px;
-        }
-        select, input {
-            padding: 10px;
-            margin-top: 10px;
-        }
-        button {
-            padding: 10px 15px;
-            margin-top: 10px;
-            background: #0af;
-            border: none;
-            color: white;
-            cursor: pointer;
-        }
-        button:hover {
-            background: #08c;
-        }
-        #home-feedback {
-            margin-top: 5px;
-            font-size: 14px;
-            color: #0af;
-        }
+        body { background: #111; color: #eee; font-family: sans-serif; text-align: center; }
+        .controls, .locations { display: inline-block; vertical-align: top; margin: 20px; }
+        .arrow-btn { width: 60px; height: 60px; margin: 5px; font-size: 24px; }
+        select, input, button { margin-top: 10px; padding: 10px; }
+        #position { font-size: 18px; margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -53,13 +17,13 @@
 <div class="locations">
     <h3>📍 Go to Location</h3>
     <select id="goto">
-        {% for loc in locations %}
-        <option value="{{ loc }}">{{ loc }}</option>
+        {% for name, _ in locations.items() %}
+        <option value="{{ name }}">{{ name }}</option>
         {% endfor %}
     </select><br>
     <button onclick="gotoLocation()">Go</button>
 
-    <h3>💾 Save New Location</h3>
+    <h3>💾 Save Location</h3>
     <input id="new_name" placeholder="Name" /><br>
     <button onclick="saveLocation()">Save</button>
 
@@ -69,16 +33,12 @@
 
 <div class="controls">
     <h3>🔧 Manual Control</h3>
-    <input id="stepSize" type="number" value="5" style="width:60px"> step<br><br>
+    <input id="stepSize" type="number" value="5" style="width:60px"> steps<br><br>
     <button class="arrow-btn" onclick="move('up')">⬆️</button><br>
     <button class="arrow-btn" onclick="move('left')">⬅️</button>
     <button class="arrow-btn" onclick="move('right')">➡️</button><br>
     <button class="arrow-btn" onclick="move('down')">⬇️</button><br>
     <div id="position">X: 0 Y: 0</div>
-
-    <h3>🏠 Reset Home Position</h3>
-    <button onclick="resetHome()">Reset</button>
-    <div id="home-feedback"></div>
 </div>
 
 <script>
@@ -115,43 +75,22 @@
         document.getElementById('position').innerText = `X: ${pos.x} Y: ${pos.y}`;
     }
 
-    async function resetHome() {
-        try {
-            const res = await fetch('/reset_home', { method: 'POST' });
-            const data = await res.json();
-            document.getElementById('home-feedback').innerText =
-                `New home set at X: ${data.new_home.x}, Y: ${data.new_home.y}`;
-        } catch (e) {
-            document.getElementById('home-feedback').innerText = "Failed to reset home.";
-        }
-    }
-
     function startListening() {
         const rec = new webkitSpeechRecognition();
         rec.lang = 'en-US';
         rec.onresult = async (e) => {
             const text = e.results[0][0].transcript;
-            console.log("[Voice Input]:", text);
-            try {
-                const res = await fetch('/voice_command', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ text })
-                });
-                const result = await res.json();
-                console.log("[LLM Response]:", result);
-                alert(result.status === 'success'
-                    ? `Laser pointing to: ${result.location}`
-                    : `Result: ${result.message}`);
-            } catch (err) {
-                console.error("Server error:", err);
-                alert("Error processing voice command");
-            }
+            const res = await fetch('/voice_command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text })
+            });
+            const data = await res.json();
+            alert(data.status === 'success' ? `Moved to: ${data.location}` : data.message);
         };
         rec.start();
     }
 
-    // Auto-refresh current X/Y
     setInterval(updatePosition, 1000);
 </script>
 </body>

@@ -15,7 +15,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 app = Flask(__name__)
 
 # ─── Inactivity Timer ───
-STEPPER_TIMEOUT = 60  # seconds
+STEPPER_TIMEOUT = 60
 last_activity_time = time.time()
 
 def inactivity_monitor():
@@ -71,7 +71,6 @@ class GalvoController:
     def disable_motors(self):
         self.Motor1.Stop()
         self.Motor2.Stop()
-        print("[INFO] Motors powered off due to inactivity.")
 
     def shutdown(self):
         self.disable_motors()
@@ -80,7 +79,7 @@ class GalvoController:
 galvo = GalvoController()
 atexit.register(galvo.shutdown)
 
-# ─── Location Save/Load ───
+# ─── Location Load/Save ───
 LOCATION_FILE = 'locations.json'
 
 def load_locations():
@@ -99,7 +98,7 @@ def save_locations(locs):
 # ─── Routes ───
 @app.route('/')
 def index():
-    return render_template('index.html', locations=load_locations().keys())
+    return render_template('index.html', locations=load_locations())
 
 @app.route('/get_position')
 def get_position():
@@ -110,7 +109,6 @@ def move_manual():
     data = request.get_json()
     direction = data.get('direction')
     step = int(data.get('step_size', 5))
-
     if direction == 'up': galvo.move_relative(0, step)
     elif direction == 'down': galvo.move_relative(0, -step)
     elif direction == 'left': galvo.move_relative(-step, 0)
@@ -127,10 +125,25 @@ def save_location():
         save_locations(locs)
     return '', 204
 
-@app.route('/goto/<loc>', methods=['POST'])
-def goto_location(loc):
+@app.route('/goto/<name>', methods=['POST'])
+def goto_location(name):
     locations = load_locations()
-    pos = locations.get(loc)
+    def find_location(name, node):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if k == name and isinstance(v, dict) and 'x' in v and 'y' in v:
+                    return v
+                result = find_location(name, v)
+                if result:
+                    return result
+        elif isinstance(node, list):
+            for item in node:
+                result = find_location(name, item)
+                if result:
+                    return result
+        return None
+
+    pos = find_location(name, locations)
     if pos:
         galvo.move_to(pos['x'], pos['y'])
         return '', 204
@@ -139,19 +152,25 @@ def goto_location(loc):
 @app.route('/voice_command', methods=['POST'])
 def voice_command():
     text = request.get_json().get('text', '').strip().lower()
-    print(f"[VOICE COMMAND RECEIVED]: {text}")
-
     if not text:
         return jsonify({'status': 'error', 'message': 'No input received'}), 400
 
     locations = load_locations()
-    location_names = ', '.join(locations.keys())
+    flat_names = []
 
-    prompt = (
-        f"These are the known locations: {location_names}.\n"
-        f"Given the voice command: \"{text}\", which location should the laser point to?\n"
-        f"Respond with exactly one of the names, or say \"none\" if nothing matches."
-    )
+    def collect_names(d):
+        if isinstance(d, dict):
+            for k, v in d.items():
+                if isinstance(v, dict) and 'x' in v and 'y' in v:
+                    flat_names.append(k)
+                collect_names(v)
+        elif isinstance(d, list):
+            for item in d:
+                collect_names(item)
+
+    collect_names(locations)
+    location_names = ', '.join(flat_names)
+    prompt = f"Known locations: {location_names}. Which location best matches: \"{text}\"? Respond with only the name or 'none'."
 
     try:
         response = openai.chat.completions.create(
@@ -160,17 +179,11 @@ def voice_command():
             max_tokens=10,
             temperature=0.1
         )
-        message = response.choices[0].message.content.strip()
-        print(f"[LLM RESPONSE]: {message}")
-
-        if message in locations:
-            galvo.move_to(locations[message]['x'], locations[message]['y'])
-            return jsonify({'status': 'success', 'location': message})
-
-        return jsonify({'status': 'not found', 'message': message})
-
+        match = response.choices[0].message.content.strip()
+        if match in flat_names:
+            return goto_location(match)
+        return jsonify({'status': 'not found', 'message': match})
     except Exception as e:
-        print(f"[ERROR]: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/reset_home', methods=['POST'])
