@@ -8,17 +8,16 @@ import atexit
 import threading
 import time
 
-# ─── Setup ───
+# Load env vars
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
+
 app = Flask(__name__)
 
-LOCATION_FILE = 'locations.json'
+# ─── Inactivity Timer ───
 STEPPER_TIMEOUT = 60  # seconds
 last_activity_time = time.time()
-current_location_name = None
 
-# ─── Background Thread ───
 def inactivity_monitor():
     while True:
         time.sleep(5)
@@ -34,6 +33,7 @@ class GalvoController:
         self.MIN_Y, self.MAX_Y = 0, 200
         self.current_position = {'x': 0, 'y': 0}
         self.home_position = {'x': 0, 'y': 0}
+        self.last_location_name = "None"
 
         self.Motor1 = HR8825(13, 19, 12, (16, 17, 20))
         self.Motor2 = HR8825(24, 18, 4, (21, 22, 27))
@@ -74,22 +74,16 @@ class GalvoController:
         self.Motor2.Stop()
         print("[INFO] Motors powered off due to inactivity.")
 
-    def draw_square(self, center_x, center_y, size=10, delay=0.001):
-        half = size // 2
-        points = [
-            (center_x - half, center_y - half),
-            (center_x + half, center_y - half),
-            (center_x + half, center_y + half),
-            (center_x - half, center_y + half),
-            (center_x - half, center_y - half)
-        ]
-        for (x, y) in points:
-            self.move_to(x, y, delay)
+    def shutdown(self):
+        self.disable_motors()
+        self.home()
 
 galvo = GalvoController()
 atexit.register(galvo.shutdown)
 
-# ─── JSON Utilities ───
+# ─── Location Save/Load ───
+LOCATION_FILE = 'locations.json'
+
 def load_locations():
     if not os.path.exists(LOCATION_FILE):
         return {}
@@ -106,19 +100,14 @@ def save_locations(locs):
 # ─── Routes ───
 @app.route('/')
 def index():
-    return render_template('index.html', locations=load_locations().keys(), current_location=current_location_name)
+    return render_template('index.html', locations=load_locations().keys(), current=galvo.last_location_name)
 
 @app.route('/get_position')
 def get_position():
     return jsonify(galvo.current_position)
 
-@app.route('/get_location')
-def get_current_location():
-    return jsonify({'location': current_location_name or "None"})
-
 @app.route('/move_manual', methods=['POST'])
 def move_manual():
-    global current_location_name
     data = request.get_json()
     direction = data.get('direction')
     step = int(data.get('step_size', 5))
@@ -127,8 +116,6 @@ def move_manual():
     elif direction == 'down': galvo.move_relative(0, -step)
     elif direction == 'left': galvo.move_relative(-step, 0)
     elif direction == 'right': galvo.move_relative(step, 0)
-
-    current_location_name = None
     return '', 204
 
 @app.route('/save_location', methods=['POST'])
@@ -143,22 +130,51 @@ def save_location():
 
 @app.route('/goto/<loc>', methods=['POST'])
 def goto_location(loc):
-    global current_location_name
     locations = load_locations()
     pos = locations.get(loc)
     if pos:
+        galvo.last_location_name = loc
         galvo.move_to(pos['x'], pos['y'])
-        current_location_name = loc
-
-        # Draw a square around the location
-        threading.Thread(target=lambda: (
-            galvo.draw_square(pos['x'], pos['y']),
-            time.sleep(10),
-            galvo.move_to(pos['x'], pos['y'])
-        ), daemon=True).start()
-
         return '', 204
     return 'Location not found', 404
+
+@app.route('/voice_command', methods=['POST'])
+def voice_command():
+    text = request.get_json().get('text', '').strip().lower()
+    print(f"[VOICE COMMAND RECEIVED]: {text}")
+
+    if not text:
+        return jsonify({'status': 'error', 'message': 'No input received'}), 400
+
+    locations = load_locations()
+    location_names = ', '.join(locations.keys())
+
+    prompt = (
+        f"These are the known locations: {location_names}.\n"
+        f"Given the voice command: \"{text}\", which location should the laser point to?\n"
+        f"Respond with exactly one of the names, or say \"none\" if nothing matches."
+    )
+
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=10,
+            temperature=0.1
+        )
+        message = response.choices[0].message.content.strip()
+        print(f"[LLM RESPONSE]: {message}")
+
+        if message in locations:
+            galvo.last_location_name = message
+            galvo.move_to(locations[message]['x'], locations[message]['y'])
+            return jsonify({'status': 'success', 'location': message})
+
+        return jsonify({'status': 'not found', 'message': message})
+
+    except Exception as e:
+        print(f"[ERROR]: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/reset_home', methods=['POST'])
 def reset_home():
