@@ -1,44 +1,95 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Laser Assistant</title>
+    <title>Laser Pointer Assistant</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { background: #111; color: #eee; font-family: sans-serif; text-align: center; }
-        .controls, .locations { display: inline-block; vertical-align: top; margin: 20px; }
-        .arrow-btn { width: 60px; height: 60px; margin: 5px; font-size: 24px; }
-        select, input, button { margin-top: 10px; padding: 10px; }
-        #position { font-size: 18px; margin-top: 10px; }
+        body {
+            background-color: #111;
+            color: #eee;
+            font-family: sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 { margin-bottom: 10px; }
+        .panel {
+            display: inline-block;
+            vertical-align: top;
+            background: #222;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 10px;
+            width: 300px;
+        }
+        .arrow-btn {
+            width: 60px;
+            height: 60px;
+            margin: 5px;
+            font-size: 24px;
+            cursor: pointer;
+        }
+        select, input, button {
+            padding: 10px;
+            margin-top: 10px;
+            width: 90%;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        button {
+            background: #0af;
+            color: white;
+        }
+        button:hover {
+            background: #08c;
+        }
+        #position, #current-location {
+            margin-top: 15px;
+            font-size: 16px;
+            color: #0af;
+        }
     </style>
 </head>
 <body>
+
 <h1>🔦 Laser Pointer Assistant</h1>
 
-<div class="locations">
+<div class="panel">
     <h3>📍 Go to Location</h3>
     <select id="goto">
-        {% for name, _ in locations.items() %}
-        <option value="{{ name }}">{{ name }}</option>
+        {% for loc in locations %}
+        <option value="{{ loc }}">{{ loc }}</option>
         {% endfor %}
-    </select><br>
+    </select>
     <button onclick="gotoLocation()">Go</button>
 
     <h3>💾 Save Location</h3>
-    <input id="new_name" placeholder="Name" /><br>
+    <input id="new_name" placeholder="Name" />
     <button onclick="saveLocation()">Save</button>
 
     <h3>🎙️ Voice Command</h3>
     <button onclick="startListening()">🎤 Ask</button>
 </div>
 
-<div class="controls">
+<div class="panel">
     <h3>🔧 Manual Control</h3>
-    <input id="stepSize" type="number" value="5" style="width:60px"> steps<br><br>
+    <input id="stepSize" type="number" value="5" min="1" style="width: 60px;"> step
+    <br><br>
     <button class="arrow-btn" onclick="move('up')">⬆️</button><br>
     <button class="arrow-btn" onclick="move('left')">⬅️</button>
     <button class="arrow-btn" onclick="move('right')">➡️</button><br>
     <button class="arrow-btn" onclick="move('down')">⬇️</button><br>
+
+    <h3>🏠 Reset Home</h3>
+    <button onclick="resetHome()">Reset</button>
+    <div id="home-feedback"></div>
+</div>
+
+<div class="panel">
+    <h3>📊 Status</h3>
     <div id="position">X: 0 Y: 0</div>
+    <div id="current-location">Location: None</div>
 </div>
 
 <script>
@@ -46,7 +97,7 @@
         const step = document.getElementById('stepSize').value;
         await fetch('/move_manual', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ direction: dir, step_size: step })
         });
         updatePosition();
@@ -57,7 +108,7 @@
         if (!name) return;
         await fetch('/save_location', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name })
         });
         location.reload();
@@ -69,10 +120,21 @@
         updatePosition();
     }
 
+    async function resetHome() {
+        const res = await fetch('/reset_home', { method: 'POST' });
+        const data = await res.json();
+        document.getElementById('home-feedback').innerText =
+            `New home set at X: ${data.new_home.x}, Y: ${data.new_home.y}`;
+    }
+
     async function updatePosition() {
         const res = await fetch('/get_position');
         const pos = await res.json();
         document.getElementById('position').innerText = `X: ${pos.x} Y: ${pos.y}`;
+
+        const locRes = await fetch('/get_location');
+        const loc = await locRes.json();
+        document.getElementById('current-location').innerText = `Location: ${loc.location}`;
     }
 
     function startListening() {
@@ -85,13 +147,16 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ text })
             });
-            const data = await res.json();
-            alert(data.status === 'success' ? `Moved to: ${data.location}` : data.message);
+            const result = await res.json();
+            alert(result.status === 'success'
+                ? `Laser pointing to: ${result.location}`
+                : `Result: ${result.message}`);
         };
         rec.start();
     }
 
     setInterval(updatePosition, 1000);
 </script>
+
 </body>
 </html>
